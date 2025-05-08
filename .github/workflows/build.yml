@@ -96,4 +96,6 @@ jobs:
         body: TODO New Release.
         draft: false
         prerelease: false
-        files: android-${{ github.event.inputs.target_arch || 'aarch64' }}-monit.zip
+        files: |
+            android-${{ github.event.inputs.target_arch || 'aarch64' }}-monit.zip
+            monitrc
