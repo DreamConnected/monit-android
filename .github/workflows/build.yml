@@ -28,8 +28,7 @@ jobs:
         ndk-version: ${{ github.event.inputs.ndk_version || 'r27c' }}
 
     - name: Install dependencies
-      run: sudo apt-get install -y build-essential unzip zlib1g-dev libtool \
-           bison flex autoconf make
+      run: sudo apt-get install -y build-essential unzip zlib1g-dev libtool bison flex autoconf make
 
     - name: Clone monit
       run: |
