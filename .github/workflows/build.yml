@@ -68,10 +68,10 @@ jobs:
 
         # Patch for build.
         cp monit.diff monit/
-        git apply --check monit.diff
-        git apply monit.diff
 
         cd monit
+        git apply --check monit.diff
+        git apply monit.diff
         ./bootstrap
         ./configure --host $TARGET --prefix=/data/share --with-piddir=/data/local/tmp --without-pam --with-ssl-incl-dir=/data/sysroot/include \
         --with-ssl-lib-dir=/data/sysroot/lib --enable-optimized --disable-shared --enable-static
