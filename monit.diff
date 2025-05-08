@@ -1,0 +1,150 @@
+diff --git a/configure.ac b/configure.ac
+index 71f21e6..463f314 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -71,7 +71,7 @@ AC_CHECK_LIB([inet],   [socket])
+ AC_CHECK_LIB([nsl],    [inet_addr])
+ AC_CHECK_LIB([resolv], [inet_aton])
+ AC_CHECK_LIB([c], [crypt], [:], [AC_CHECK_LIB([crypt], [crypt])])
+-AC_CHECK_LIB([pthread], [pthread_create], [], [AC_MSG_ERROR([POSIX thread library is required])])
++AC_CHECK_LIB([c], [pthread_create], [], [AC_MSG_ERROR([POSIX thread library is required])])
+ 
+ 
+ # ------------------------------------------------------------------------
+diff --git a/libmonit/configure.ac b/libmonit/configure.ac
+index 84c1217..381f50b 100644
+--- a/libmonit/configure.ac
++++ b/libmonit/configure.ac
+@@ -145,7 +145,7 @@ AC_ARG_WITH([zlib],
+ # Libraries 
+ # ---------------------------------------------------------------------------
+ 
+-AC_CHECK_LIB([pthread], [pthread_create], [], [AC_MSG_ERROR([POSIX thread library is required])])
++AC_CHECK_LIB([c], [pthread_create], [], [AC_MSG_ERROR([POSIX thread library is required])])
+ AC_CHECK_LIB([m], [round], [], [AC_MSG_ERROR([Math library is required])])
+ 
+ # ---------------------------------------------------------------------------
+@@ -240,7 +240,7 @@ architecture=`uname`
+ if test "$architecture" = "Linux"  
+ then
+    CFLAGS="$CFLAGS -D _REENTRANT"
+-   LDFLAGS="$LDFLAGS -lrt"
++   LDFLAGS="$LDFLAGS"
+    AC_DEFINE([LINUX], 1, [Define to 1 if the system is Linux])
+ elif test "$architecture" = "FreeBSD"
+ then
+diff --git a/libmonit/src/system/Command.c b/libmonit/src/system/Command.c
+index 17c5512..db391b4 100644
+--- a/libmonit/src/system/Command.c
++++ b/libmonit/src/system/Command.c
+@@ -53,6 +53,25 @@
+ #include "system/Time.h"
+ #include "system/Command.h"
+ 
++#ifdef __ANDROID__
++#define SIG_CANCEL_SIGNAL SIGUSR1
++#define PTHREAD_CANCEL_ENABLE 1
++#define PTHREAD_CANCEL_DISABLE 0
++
++static int pthread_setcancelstate(int state, int *oldstate) {
++	sigset_t   new, old;
++	int ret;
++	sigemptyset (&new);
++	sigaddset (&new, SIG_CANCEL_SIGNAL);
++
++	ret = pthread_sigmask(state == PTHREAD_CANCEL_ENABLE ? SIG_BLOCK : SIG_UNBLOCK, &new , &old);
++	if(oldstate != NULL)
++	{
++		*oldstate =sigismember(&old,SIG_CANCEL_SIGNAL) == 0 ? PTHREAD_CANCEL_DISABLE : PTHREAD_CANCEL_ENABLE;
++	}
++	return ret;
++}
++#endif
+ 
+ /**
+  * Implementation of the Command and Process interfaces.
+diff --git a/libmonit/src/system/System.c b/libmonit/src/system/System.c
+index d36539e..20ea1b6 100644
+--- a/libmonit/src/system/System.c
++++ b/libmonit/src/system/System.c
+@@ -109,7 +109,7 @@ void System_debug(const char *d, ...) {
+ int System_descriptors(int guard) {
+         int fileDescriptors = (int)sysconf(_SC_OPEN_MAX);
+         if (fileDescriptors < 2)
+-                fileDescriptors = getdtablesize();
++                fileDescriptors = 1024;
+         assert(fileDescriptors > 2);
+         if (guard > 0) {
+                 if (fileDescriptors > guard)
+diff --git a/src/ssl/Ssl.c b/src/ssl/Ssl.c
+index 0b2face..11f44e7 100644
+--- a/src/ssl/Ssl.c
++++ b/src/ssl/Ssl.c
+@@ -508,18 +508,23 @@ static int _verifyClientCertificates(int preverify_ok, X509_STORE_CTX *ctx) {
+ #if (OPENSSL_VERSION_NUMBER < 0x10100000L)
+         X509_OBJECT found_cert;
+         if (X509_STORE_CTX_get_error_depth(ctx) == 0 && X509_STORE_get_by_subject(ctx, X509_LU_X509, X509_get_subject_name(X509_STORE_CTX_get_current_cert(ctx)), &found_cert) != 1) {
++#elif __ANDROID__
++	X509 *found_cert = X509_STORE_CTX_get_current_cert(ctx);
++	if (X509_STORE_CTX_get_error_depth(ctx) == 0 && found_cert != NULL) {
+ #else
+         X509_OBJECT *found_cert = X509_OBJECT_new();
+         if (X509_STORE_CTX_get_error_depth(ctx) == 0 && X509_STORE_CTX_get_by_subject(ctx, X509_LU_X509, X509_get_subject_name(X509_STORE_CTX_get_current_cert(ctx)), found_cert) != 1) {
+ #endif
+                 Log_error("SSL: no matching certificate found -- %s\n", SSLERROR);
+                 X509_STORE_CTX_set_error(ctx, X509_V_ERR_CERT_REJECTED);
+-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(__ANDROID__)
+                 X509_OBJECT_free(found_cert);
++#else
++		X509_free(found_cert);
+ #endif
+                 return 0;
+         }
+-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
++#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(__ANDROID__)
+         X509_OBJECT_free(found_cert);
+ #endif
+         return 1;
+diff --git a/src/util.c b/src/util.c
+index be48be2..df35ae2 100644
+--- a/src/util.c
++++ b/src/util.c
+@@ -128,6 +128,37 @@
+ #include "exceptions/AssertException.h"
+ #include "exceptions/IOException.h"
+ 
++#ifdef __ANDROID__
++#include <stdio.h>
++#include <string.h>
++#include <openssl/evp.h>
++
++char* crypt(const char *outside, const char *salt) {
++    static char encrypted[100];
++    EVP_CIPHER_CTX *ctx;
++    unsigned char key[8];
++    unsigned char iv[8];
++
++    key[0] = salt[0];
++    key[1] = salt[1];
++    key[2] = 0; key[3] = 0; key[4] = 0; key[5] = 0; key[6] = 0; key[7] = 0;
++    memset(iv, 0, sizeof(iv));
++
++    ctx = EVP_CIPHER_CTX_new();
++    EVP_EncryptInit_ex(ctx, EVP_des_ecb(), NULL, key, iv);
++
++    int len = 0;
++    int ciphertext_len = 0;
++
++    EVP_EncryptUpdate(ctx, (unsigned char*)encrypted, &len, (unsigned char*)outside, strlen(outside));
++    ciphertext_len = len;
++    EVP_EncryptFinal_ex(ctx, (unsigned char*)encrypted + len, &len);
++    ciphertext_len += len;
++    encrypted[ciphertext_len] = '\0';
++    EVP_CIPHER_CTX_free(ctx);
++    return encrypted;
++}
++#endif
+ 
+ struct ad_user {
+         const char *login;
