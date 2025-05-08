@@ -55,7 +55,6 @@ jobs:
 
     - name: Build monit
       run: |
-        cd libcap
         export NDK_TOOLCHAIN=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
         export TARGET=${{ steps.vars.outputs.target }}
         export API=${{ steps.vars.outputs.api }}
