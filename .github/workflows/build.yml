@@ -28,7 +28,8 @@ jobs:
         ndk-version: ${{ github.event.inputs.ndk_version || 'r27c' }}
 
     - name: Install dependencies
-      run: sudo apt-get install -y build-essential unzip
+      run: sudo apt-get install -y build-essential unzip zlib1g-dev libtool \
+           bison flex autoconf make
 
     - name: Clone monit
       run: |
@@ -67,6 +68,13 @@ jobs:
         export RANLIB=$NDK_TOOLCHAIN/llvm-ranlib
         export STRIP=$NDK_TOOLCHAIN/llvm-strip
 
+        # Patch for build.
+        cp monit.diff monit/
+        git apply --check monit.diff
+        git apply monit.diff
+
+        cd monit
+        ./bootstrap
         ./configure --host $TARGET --prefix=/data/share --with-piddir=/data/local/tmp --without-pam --with-ssl-incl-dir=/data/sysroot/include \
         --with-ssl-lib-dir=/data/sysroot/lib --enable-optimized --disable-shared --enable-static
         make -j $(nproc)
