@@ -74,7 +74,7 @@ jobs:
         git apply monit.diff
         ./bootstrap
         ./configure --host $TARGET --prefix=/data/share --with-piddir=/data/local/tmp --without-pam --with-ssl-incl-dir=/data/sysroot/include \
-        --with-ssl-lib-dir=/data/sysroot/lib --enable-optimized --disable-shared --enable-static
+        --with-ssl-lib-dir=/data/sysroot/lib --enable-optimized --localstatedir=/data/local/tmp/var --disable-shared --enable-static
         make -j $(nproc)
         sudo make install
         echo "RELEASE_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
