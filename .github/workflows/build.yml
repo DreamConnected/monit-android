@@ -98,4 +98,4 @@ jobs:
         prerelease: false
         files: |
             android-${{ github.event.inputs.target_arch || 'aarch64' }}-monit.zip
-            monitrc
+            monit/monitrc
